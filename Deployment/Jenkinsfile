@@ -1,0 +1,81 @@
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout(true)
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: 'master',
+                    url: 'https://github.com/sivanunna9/Train-Ticket-Reservation-System.git'
+            }
+        }
+
+        stage('Verify Tools') {
+            steps {
+                sh '''
+                    java -version
+                    mvn -version
+                    ansible --version || true
+                '''
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'mvn clean compile'
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                sh 'mvn test'
+            }
+        }
+
+        stage('Package WAR') {
+            steps {
+                sh 'mvn package -DskipTests'
+
+                archiveArtifacts artifacts: 'target/*.war', fingerprint: true
+            }
+        }
+
+        stage('Deploy to Artifactory') {
+            steps {
+                sh 'mvn deploy -DskipTests'
+            }
+        }
+
+        // =========================
+        // NEW STAGE: ANSIBLE DEPLOY
+        // =========================
+        stage('Deploy to JBoss via Ansible') {
+    steps {
+        sshagent(['jboss-ssh-key']) {
+            sh '''
+                cd /opt/ansible
+                ansible-playbook -i inventory.ini deploy.yaml -vv
+            '''
+        }
+    }
+}
+    }
+
+    post {
+        success {
+            echo 'Pipeline completed successfully'
+        }
+
+        failure {
+            echo 'Pipeline failed'
+        }
+
+        always {
+            cleanWs(deleteDirs: true)
+        }
+    }
+}
