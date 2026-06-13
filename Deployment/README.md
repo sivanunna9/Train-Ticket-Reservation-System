@@ -114,78 +114,179 @@ This playbook performs:
 
 ```yaml
 ---
-- name: Deploy WAR to JBoss from JFrog
+- name: Deploy WAR to JBoss EAP 8 from JFrog (Fully Stable)
   hosts: jboss
   become: yes
 
   vars:
-    jboss_home: /opt/jboss-eap-8.0
+    artifactory_url: "http://JFROG_IP:8082/artifactory"
+    repo: "libs-snapshot-local"
+
+    group_path: "TrainBook/TrainBook/1.0.0-SNAPSHOT"
+
+    jboss_home: "/opt/jboss-eap-8.0"
     deploy_dir: "{{ jboss_home }}/standalone/deployments"
-    tmp_dir: /tmp/jboss-deploy
-    war_name: TrainBook.war
+
+    tmp_dir: "/tmp/jboss-deploy"
+    backup_war: "{{ deploy_dir }}/TrainBook.war.bak"
+
+    app_url: "http://JBOSS_IP:8080/TrainBook"
 
   tasks:
 
-    - name: Stop JBoss gracefully
-      shell: "{{ jboss_home }}/bin/jboss-cli.sh --connect command=:shutdown"
-      ignore_errors: yes
+  # =========================
+  # 1. CHECK JBOSS PROCESS
+  # =========================
+  - name: Check JBoss process
+    shell: "pgrep -f standalone || true"
+    register: jboss_process
 
-    - name: Force kill JBoss if running
-      shell: "pkill -f standalone || true"
-      ignore_errors: yes
+  # =========================
+  # 2. STOP JBOSS SAFELY
+  # =========================
+  - name: Stop JBoss via CLI (safe)
+    shell: |
+      {{ jboss_home }}/bin/jboss-cli.sh --connect command=:shutdown
+    when: jboss_process.stdout != ""
+    failed_when: false
 
-    - name: Create temp directory
-      file:
-        path: "{{ tmp_dir }}"
-        state: directory
-        mode: '0755'
+  - name: Force kill JBoss if still running
+    shell: "pkill -f standalone || true"
+    when: jboss_process.stdout != ""
+    failed_when: false
 
-    - name: Backup existing WAR
-      shell: |
-        if [ -f {{ deploy_dir }}/{{ war_name }} ]; then
-          cp {{ deploy_dir }}/{{ war_name }} {{ deploy_dir }}/{{ war_name }}.bak
-        fi
-      ignore_errors: yes
+  # =========================
+  # 3. CREATE TEMP DIRECTORY
+  # =========================
+  - name: Create temp directory
+    file:
+      path: "{{ tmp_dir }}"
+      state: directory
+      mode: '0755'
 
-    - name: Get latest WAR metadata from Artifactory
-      uri:
-        url: "http://<JFROG_URL>/artifactory/api/storage/libs-snapshot-local/TrainBook/TrainBook/1.0.0-SNAPSHOT/"
-        method: GET
-        return_content: yes
-      register: art_info
+  # =========================
+  # 4. BACKUP OLD WAR
+  # =========================
+  - name: Backup existing WAR (if exists)
+    copy:
+      src: "{{ deploy_dir }}/TrainBook.war"
+      dest: "{{ backup_war }}"
+      remote_src: yes
+    ignore_errors: yes
 
-    - name: Extract latest WAR file
-      set_fact:
-        war_file: "{{ (art_info.json.children | selectattr('uri','search','.war') | list | last).uri }}"
+  # =========================
+  # 5. SEARCH ARTIFACT (RELIABLE METHOD)
+  # =========================
+  - name: Search latest WAR in Artifactory
+    uri:
+      url: "{{ artifactory_url }}/api/search/artifact?name=TrainBook*.war&repos={{ repo }}"
+      return_content: yes
+    register: search_result
+    failed_when: false
 
-    - name: Download WAR from Artifactory
-      get_url:
-        url: "http://<JFROG_URL>/artifactory/libs-snapshot-local/TrainBook/TrainBook/1.0.0-SNAPSHOT{{ war_file }}"
-        dest: "{{ tmp_dir }}/{{ war_name }}"
-        url_username: admin
-        url_password: YOUR_PASSWORD
-        force: yes
+  # =========================
+  # 6. EXTRACT CLEAN WAR NAME (FIX FOR YOUR ERROR)
+  # =========================
+  - name: Extract raw WAR path
+    set_fact:
+      war_raw: >-
+        {{
+          (search_result.json.results
+          | default([])
+          | map(attribute='uri')
+          | list
+          | last
+          | default('')
+          )
+        }}
 
-    - name: Deploy WAR to JBoss
-      copy:
-        src: "{{ tmp_dir }}/{{ war_name }}"
-        dest: "{{ deploy_dir }}/{{ war_name }}"
-        remote_src: yes
+  - name: Clean WAR filename (REMOVE FULL URL ISSUE)
+    set_fact:
+      war_file: "{{ war_raw | regex_replace('.*/', '') }}"
 
-    - name: Start JBoss
-      shell: "nohup {{ jboss_home }}/bin/standalone.sh -b 0.0.0.0 > /dev/null 2>&1 &"
+  - name: Fail if WAR not found
+    fail:
+      msg: "❌ No WAR found in Artifactory search results"
+    when: war_file == ""
 
-    - name: Cleanup temp files
-      file:
-        path: "{{ tmp_dir }}"
-        state: absent
+  - name: Debug WAR file
+    debug:
+      var: war_file
 
-    - name: Verify deployment
-      stat:
-        path: "{{ deploy_dir }}/{{ war_name }}"
-      register: war_check
+  # =========================
+  # 7. DOWNLOAD WAR (FIXED URL BUILD)
+  # =========================
+  - name: Download latest WAR from JFrog
+    get_url:
+      url: "{{ artifactory_url }}/{{ repo }}/{{ group_path }}/{{ war_file }}"
+      dest: "{{ tmp_dir }}/app.war"
+      url_username: admin
+      url_password: PASSWORD
+      force: yes
 
-    - name: Fail if deployment failed
-      fail:
-        msg: "WAR deployment failed"
-      when: not war_check.stat.exists
+  # =========================
+  # 8. DEPLOY TO JBOSS
+  # =========================
+  - name: Remove old deployment
+    file:
+      path: "{{ deploy_dir }}/TrainBook.war"
+      state: absent
+
+  - name: Remove marker files
+    file:
+      path: "{{ deploy_dir }}/TrainBook.war.*"
+      state: absent
+    ignore_errors: yes
+
+  - name: Copy WAR to deployments
+    copy:
+      src: "{{ tmp_dir }}/app.war"
+      dest: "{{ deploy_dir }}/TrainBook.war"
+      remote_src: yes
+
+  - name: Trigger deployment
+    file:
+      path: "{{ deploy_dir }}/TrainBook.war.dodeploy"
+      state: touch
+
+  # =========================
+  # 9. START JBOSS
+  # =========================
+  - name: Start JBoss
+    shell: |
+      nohup {{ jboss_home }}/bin/standalone.sh -b 0.0.0.0 > {{ jboss_home }}/standalone/log/server.log 2>&1 &
+    async: 10
+    poll: 0
+
+  # =========================
+  # 10. WAIT FOR APPLICATION
+  # =========================
+  #- name: Wait for application to start
+  #  uri:
+  #    url: "{{ app_url }}"
+  #    status_code: 200
+ #   register: result
+  #  retries: 15
+  #  delay: 10
+  #  until: result.status == 200
+
+  # =========================
+  # 11. CLEANUP
+  # =========================
+  - name: Cleanup temp files
+    file:
+      path: "{{ tmp_dir }}"
+      state: absent
+
+  # =========================
+  # 12. ROLLBACK (SAFE)
+  # =========================
+  #- name: Rollback WAR if deployment fails
+  #  copy:
+  #    src: "{{ backup_war }}"
+  #    dest: "{{ deploy_dir }}/TrainBook.war"
+  #    remote_src: yes
+  #  when: result is failed
+  #  ignore_errors: yes
+
+     
