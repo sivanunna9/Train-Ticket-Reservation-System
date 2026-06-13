@@ -97,13 +97,10 @@
 
         <repository>
             <id>artifactory</id>
-            <url>http://3.86.94.136:8082/artifactory/maven-releases</url>
+            <url>http://3.86.94.136:8082/artifactory/libs-snapshot-local</url>
         </repository>
 
-        <snapshotRepository>
-            <id>artifactory</id>
-            <url>http://3.86.94.136:8082/artifactory/maven-snapshots</url>
-        </snapshotRepository>
+      
 
     </distributionManagement>
 
