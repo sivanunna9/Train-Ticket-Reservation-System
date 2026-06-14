@@ -1,18 +1,15 @@
--- Enable user creation in Oracle XE container
+-- Allow user creation
 ALTER SESSION SET "_ORACLE_SCRIPT"=TRUE;
 
--- Create application user
+-- Create user
 CREATE USER RESERVATION IDENTIFIED BY MANAGER;
 
--- Grant permissions
 GRANT DBA TO RESERVATION;
 
--- Switch to RESERVATION schema
-ALTER SESSION SET CURRENT_SCHEMA = RESERVATION;
+-- IMPORTANT: force connect (works in gvenzl image)
+CONNECT RESERVATION/MANAGER;
 
--- =========================
--- TABLES
--- =========================
+-- Now everything runs under RESERVATION automatically
 
 CREATE TABLE CUSTOMER 
 (
@@ -58,26 +55,15 @@ CREATE TABLE HISTORY
     FOREIGN KEY (MAILID) REFERENCES CUSTOMER(MAILID)
 );
 
--- =========================
--- DATA INSERTION
--- =========================
-
+-- seed data
 INSERT INTO ADMIN VALUES
 ('admin@demo.com','admin','System','Admin','Demo Address','9874561230');
 
 INSERT INTO CUSTOMER VALUES
 ('shashi@demo.com','shashi','Shashi','Raj','Kolkata',954745222);
 
-INSERT INTO TRAIN VALUES
-(10001,'JODHPUR EXP','HOWRAH','JODHPUR',152,490.50);
+INSERT INTO TRAIN VALUES(10001,'JODHPUR EXP','HOWRAH','JODHPUR',152,490.50);
+INSERT INTO TRAIN VALUES(10002,'YAMUNA EXP','GAYA','DELHI',52,550.50);
+INSERT INTO TRAIN VALUES(10003,'NILANCHAL EXP','GAYA','HOWRAH',92,451);
 
-INSERT INTO TRAIN VALUES
-(10002,'YAMUNA EXP','GAYA','DELHI',52,550.50);
-
-INSERT INTO TRAIN VALUES
-(10003,'NILANCHAL EXP','GAYA','HOWRAH',92,451);
-
--- =========================
--- FINAL COMMIT
--- =========================
 COMMIT;
