@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: oracle-init-job
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init
+          image: oracleinanutshell/oracle-xe-11g
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              echo "Waiting for Oracle...";
+              until nc -z oracle-db 1521; do
+                sleep 5;
+              done;
+
+              echo "Creating schema...";
+
+              sqlplus RESERVATION/MANAGER@oracle-db:1521/XEPDB1 <<EOF
+
+              CREATE TABLE CUSTOMER (
+                MAILID VARCHAR2(40) PRIMARY KEY,
+                PWORD VARCHAR2(20),
+                FNAME VARCHAR2(20),
+                LNAME VARCHAR2(20),
+                ADDR VARCHAR2(100),
+                PHNO NUMBER(12)
+              );
+
+              CREATE TABLE ADMIN (
+                MAILID VARCHAR2(40) PRIMARY KEY,
+                PWORD VARCHAR2(20),
+                FNAME VARCHAR2(20),
+                LNAME VARCHAR2(20),
+                ADDR VARCHAR2(100),
+                PHNO NUMBER(12)
+              );
+
+              CREATE TABLE TRAIN (
+                TR_NO NUMBER PRIMARY KEY,
+                TR_NAME VARCHAR2(70),
+                FROM_STN VARCHAR2(20),
+                TO_STN VARCHAR2(20),
+                SEATS NUMBER,
+                FARE NUMBER(6,2)
+              );
+
+              CREATE TABLE HISTORY (
+                TRANSID VARCHAR2(36) PRIMARY KEY,
+                MAILID VARCHAR2(40),
+                TR_NO NUMBER,
+                DATE_OF_BOOKING DATE,
+                FROM_STN VARCHAR2(20),
+                TO_STN VARCHAR2(20),
+                SEATS NUMBER,
+                AMOUNT NUMBER(8,2)
+              );
+
+              EOF
