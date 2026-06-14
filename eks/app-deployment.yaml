@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: train-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: train-app
+  template:
+    metadata:
+      labels:
+        app: train-app
+    spec:
+      containers:
+        - name: train-app
+          image: <your-ecr-repo>/train-app:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DB_URL
+              value: "jdbc:oracle:thin:@oracle-db:1521/XEPDB1"
+            - name: DB_USER
+              value: RESERVATION
+            - name: DB_PASS
+              value: MANAGER
