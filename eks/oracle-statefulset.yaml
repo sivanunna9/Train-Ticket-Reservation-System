@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: oracle-db
+spec:
+  serviceName: oracle-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oracle-db
+  template:
+    metadata:
+      labels:
+        app: oracle-db
+    spec:
+      containers:
+        - name: oracle
+          image: gvenzl/oracle-xe:21-slim
+          ports:
+            - containerPort: 1521
+          env:
+            - name: ORACLE_PASSWORD
+              value: MANAGER
+          volumeMounts:
+            - name: oracle-data
+              mountPath: /opt/oracle/oradata
+  volumeClaimTemplates:
+    - metadata:
+        name: oracle-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
