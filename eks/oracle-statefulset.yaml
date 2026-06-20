@@ -1,3 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: oracle-db
+  labels:
+    app: oracle-db
+spec:
+  clusterIP: None
+  selector:
+    app: oracle-db
+  ports:
+    - name: oracle
+      port: 1521
+      targetPort: 1521
+
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -5,30 +21,75 @@ metadata:
 spec:
   serviceName: oracle-db
   replicas: 1
+
   selector:
     matchLabels:
       app: oracle-db
+
   template:
     metadata:
       labels:
         app: oracle-db
+
     spec:
-      containers:
-        - name: oracle
-          image: gvenzl/oracle-xe:21-slim
-          ports:
-            - containerPort: 1521
-          env:
-            - name: ORACLE_PASSWORD
-              value: MANAGER
+      securityContext:
+        fsGroup: 54321
+
+      initContainers:
+        - name: fix-permissions
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /opt/oracle/oradata
+              chown -R 54321:54321 /opt/oracle/oradata
+              chmod -R 775 /opt/oracle/oradata
           volumeMounts:
             - name: oracle-data
               mountPath: /opt/oracle/oradata
+
+      containers:
+        - name: oracle
+          image: gvenzl/oracle-xe:21-slim
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 1521
+              name: oracle
+
+          env:
+            - name: ORACLE_PASSWORD
+              value: MANAGER
+
+            - name: APP_USER
+              value: RESERVATION
+
+            - name: APP_USER_PASSWORD
+              value: MANAGER
+
+          volumeMounts:
+            - name: oracle-data
+              mountPath: /opt/oracle/oradata
+
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1"
+
   volumeClaimTemplates:
     - metadata:
         name: oracle-data
+
       spec:
-        accessModes: ["ReadWriteOnce"]
+        storageClassName: gp3
+
+        accessModes:
+          - ReadWriteOnce
+
         resources:
           requests:
             storage: 10Gi
